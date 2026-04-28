@@ -53,6 +53,85 @@ export async function POST(request: Request) {
     outcomeId = parsedOutcomeId;
     amountWagered = parsedAmountWagered;
 
+    let dynamicOddsResponse: Response;
+    try {
+      dynamicOddsResponse = await fetch(
+        "http://localhost:8000/api/math/dynamic-odds",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            currentProbability: 0.5,
+            amountWagered: parsedAmountWagered.toNumber(),
+            totalPool: 1000,
+          }),
+        },
+      );
+    } catch (error) {
+      logger.error({
+        errorMessage:
+          error instanceof Error ? error.message : "Unable to fetch dynamic odds",
+        userId: parsedUserId,
+        marketId: parsedMarketId,
+        outcomeId: parsedOutcomeId,
+        amountWagered: parsedAmountWagered.toString(),
+      });
+
+      return jsonResponse({ error: "Unable to fetch dynamic odds" }, 500);
+    }
+
+    if (!dynamicOddsResponse.ok) {
+      logger.error({
+        errorMessage: "Unable to fetch dynamic odds",
+        status: dynamicOddsResponse.status,
+        userId: parsedUserId,
+        marketId: parsedMarketId,
+        outcomeId: parsedOutcomeId,
+        amountWagered: parsedAmountWagered.toString(),
+      });
+
+      return jsonResponse({ error: "Unable to fetch dynamic odds" }, 500);
+    }
+
+    let dynamicOdds: unknown;
+    try {
+      dynamicOdds = await dynamicOddsResponse.json();
+    } catch (error) {
+      logger.error({
+        errorMessage:
+          error instanceof Error ? error.message : "Unable to parse dynamic odds",
+        userId: parsedUserId,
+        marketId: parsedMarketId,
+        outcomeId: parsedOutcomeId,
+        amountWagered: parsedAmountWagered.toString(),
+      });
+
+      return jsonResponse({ error: "Unable to fetch dynamic odds" }, 500);
+    }
+
+    const newProbability =
+      typeof dynamicOdds === "object" && dynamicOdds !== null
+        ? (dynamicOdds as { newProbability?: unknown }).newProbability
+        : undefined;
+
+    if (
+      typeof newProbability !== "number" ||
+      !Number.isFinite(newProbability) ||
+      newProbability <= 0
+    ) {
+      logger.error({
+        errorMessage: "Unable to fetch dynamic odds",
+        userId: parsedUserId,
+        marketId: parsedMarketId,
+        outcomeId: parsedOutcomeId,
+        amountWagered: parsedAmountWagered.toString(),
+      });
+
+      return jsonResponse({ error: "Unable to fetch dynamic odds" }, 500);
+    }
+
+    const payoutPotential = parsedAmountWagered.div(newProbability);
+
     const result = await prisma.$transaction(
       async (tx) => {
         const user = await tx.user.findUnique({
@@ -76,8 +155,6 @@ export async function POST(request: Request) {
         if (!outcome) {
           throw new Error("Outcome not found for market");
         }
-
-        const payoutPotential = parsedAmountWagered.mul(outcome.currentOdds);
 
         const order = await tx.order.create({
           data: {
