@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
+import { logger } from "../../../../lib/logger.js";
 
 const prisma = new PrismaClient();
 const uuidPattern =
@@ -36,17 +37,26 @@ function parsePositiveAmount(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  let userId: string | undefined;
+  let marketId: string | undefined;
+  let outcomeId: string | undefined;
+  let amountWagered: Prisma.Decimal | undefined;
+
   try {
     const body = await request.json();
-    const userId = parseUuid(body.userId, "userId");
-    const marketId = parseUuid(body.marketId, "marketId");
-    const outcomeId = parseUuid(body.outcomeId, "outcomeId");
-    const amountWagered = parsePositiveAmount(body.amountWagered);
+    const parsedUserId = parseUuid(body.userId, "userId");
+    const parsedMarketId = parseUuid(body.marketId, "marketId");
+    const parsedOutcomeId = parseUuid(body.outcomeId, "outcomeId");
+    const parsedAmountWagered = parsePositiveAmount(body.amountWagered);
+    userId = parsedUserId;
+    marketId = parsedMarketId;
+    outcomeId = parsedOutcomeId;
+    amountWagered = parsedAmountWagered;
 
     const result = await prisma.$transaction(
       async (tx) => {
         const user = await tx.user.findUnique({
-          where: { id: userId },
+          where: { id: parsedUserId },
           select: { id: true, balance: true },
         });
 
@@ -54,12 +64,12 @@ export async function POST(request: Request) {
           throw new Error("User not found");
         }
 
-        if (user.balance.lt(amountWagered)) {
+        if (user.balance.lt(parsedAmountWagered)) {
           throw new Error("Insufficient funds");
         }
 
         const outcome = await tx.outcome.findFirst({
-          where: { id: outcomeId, marketId },
+          where: { id: parsedOutcomeId, marketId: parsedMarketId },
           select: { id: true, currentOdds: true },
         });
 
@@ -67,14 +77,14 @@ export async function POST(request: Request) {
           throw new Error("Outcome not found for market");
         }
 
-        const payoutPotential = amountWagered.mul(outcome.currentOdds);
+        const payoutPotential = parsedAmountWagered.mul(outcome.currentOdds);
 
         const order = await tx.order.create({
           data: {
-            userId,
-            marketId,
-            outcomeId,
-            amountWagered,
+            userId: parsedUserId,
+            marketId: parsedMarketId,
+            outcomeId: parsedOutcomeId,
+            amountWagered: parsedAmountWagered,
             payoutPotential,
             status: "PENDING",
           },
@@ -82,16 +92,16 @@ export async function POST(request: Request) {
 
         const ledgerEntry = await tx.ledgerEntry.create({
           data: {
-            userId,
-            amount: amountWagered.neg(),
+            userId: parsedUserId,
+            amount: parsedAmountWagered.neg(),
             transactionType: "WAGER",
             referenceId: order.id,
           },
         });
 
         const updatedUser = await tx.user.update({
-          where: { id: userId },
-          data: { balance: { decrement: amountWagered } },
+          where: { id: parsedUserId },
+          data: { balance: { decrement: parsedAmountWagered } },
           select: { id: true, balance: true },
         });
 
@@ -100,9 +110,23 @@ export async function POST(request: Request) {
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
+    logger.info({
+      userId: parsedUserId,
+      marketId: parsedMarketId,
+      amountWagered: parsedAmountWagered.toString(),
+      transactionType: result.ledgerEntry.transactionType,
+    });
+
     return jsonResponse(result, 201);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to place bet";
+    logger.error({
+      errorMessage: message,
+      userId,
+      marketId,
+      outcomeId,
+      amountWagered: amountWagered?.toString(),
+    });
     const status =
       message === "Insufficient funds"
         ? 409

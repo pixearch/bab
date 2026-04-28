@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
+import { logger } from "../../../../lib/logger.js";
 
 const prisma = new PrismaClient();
 const uuidPattern =
@@ -36,16 +37,23 @@ function parsePositiveAmount(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  let userId: string | undefined;
+  let tenantId: string | undefined;
+  let amount: Prisma.Decimal | undefined;
+
   try {
     const body = await request.json();
-    const userId = parseUuid(body.userId, "userId");
-    const tenantId = parseUuid(body.tenantId, "tenantId");
-    const amount = parsePositiveAmount(body.amount);
+    const parsedUserId = parseUuid(body.userId, "userId");
+    const parsedTenantId = parseUuid(body.tenantId, "tenantId");
+    const parsedAmount = parsePositiveAmount(body.amount);
+    userId = parsedUserId;
+    tenantId = parsedTenantId;
+    amount = parsedAmount;
 
     const result = await prisma.$transaction(
       async (tx) => {
         const user = await tx.user.findFirst({
-          where: { id: userId, tenantId },
+          where: { id: parsedUserId, tenantId: parsedTenantId },
           select: { id: true, balance: true },
         });
 
@@ -55,16 +63,16 @@ export async function POST(request: Request) {
 
         const ledgerEntry = await tx.ledgerEntry.create({
           data: {
-            userId,
-            amount,
+            userId: parsedUserId,
+            amount: parsedAmount,
             transactionType: "DEPOSIT",
             referenceId: crypto.randomUUID(),
           },
         });
 
         const updatedUser = await tx.user.update({
-          where: { id: userId },
-          data: { balance: { increment: amount } },
+          where: { id: parsedUserId },
+          data: { balance: { increment: parsedAmount } },
           select: { id: true, balance: true },
         });
 
@@ -73,10 +81,23 @@ export async function POST(request: Request) {
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
+    logger.info({
+      userId: parsedUserId,
+      tenantId: parsedTenantId,
+      transactionType: result.ledgerEntry.transactionType,
+      amount: parsedAmount.toString(),
+    });
+
     return jsonResponse(result, 201);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unable to mint balance";
+    logger.error({
+      errorMessage: message,
+      userId,
+      tenantId,
+      amount: amount?.toString(),
+    });
     const status = message.includes("not found") ? 404 : 400;
 
     return jsonResponse({ error: message }, status);
