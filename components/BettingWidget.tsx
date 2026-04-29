@@ -22,6 +22,8 @@ const oddsFormats: Array<{ value: OddsFormat; label: string }> = [
   { value: "multiplier", label: "Multiplier" },
 ];
 
+const mockUserId = "44444444-4444-4444-8444-444444444444";
+
 function toProbability(p: number) {
   return `${Math.round(p * 100)}%`;
 }
@@ -61,9 +63,39 @@ export default function BettingWidget({
     null,
   );
   const [wagerAmount, setWagerAmount] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  function handleSubmit() {
-    console.log({ wagerAmount, selectedOutcomeId, marketId });
+  async function handleSubmit() {
+    setIsSubmitting(true);
+    setSuccessMessage(null);
+    setErrorMessage(null);
+
+    try {
+      const res = await fetch("/api/markets/bet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: mockUserId,
+          marketId,
+          outcomeId: selectedOutcomeId,
+          amountWagered: Number(wagerAmount),
+        }),
+      });
+
+      if (res.ok) {
+        setSuccessMessage("Bet placed successfully.");
+        return;
+      }
+
+      const body = (await res.json()) as { error?: string };
+      setErrorMessage(body.error ?? "Unable to place bet.");
+    } catch {
+      setErrorMessage("Unable to place bet.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -132,12 +164,25 @@ export default function BettingWidget({
         />
       </label>
 
+      {successMessage ? (
+        <div className="mt-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-800">
+          {successMessage}
+        </div>
+      ) : null}
+
+      {errorMessage ? (
+        <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+          {errorMessage}
+        </div>
+      ) : null}
+
       <button
         type="button"
         onClick={handleSubmit}
-        className="mt-5 w-full rounded-xl bg-blue-600 px-4 py-3 text-base font-bold text-white shadow-sm transition hover:bg-blue-700"
+        disabled={isSubmitting}
+        className="mt-5 w-full rounded-xl bg-blue-600 px-4 py-3 text-base font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
       >
-        Place Bet
+        {isSubmitting ? "Processing..." : "Place Bet"}
       </button>
     </section>
   );
