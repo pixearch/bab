@@ -10,6 +10,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --create-only"
   },
+  "prisma": {
+    "seed": "node --loader ts-node/esm prisma/seed.ts"
+  },
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "next": "^16.2.4",
@@ -21,6 +24,7 @@
     "@types/node": "25.6.0",
     "@types/react": "19.2.14",
     "prisma": "^6.19.3",
+    "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
   }
 }

@@ -2,19 +2,10 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { logger } from "../../../../lib/logger.js";
 
 const prisma = new PrismaClient();
-const uuidPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const DEFAULT_TENANT_ID = "550e8400-e29b-41d4-a716-446655440000";
 
 function jsonResponse(body: unknown, status: number) {
   return Response.json(body, { status });
-}
-
-function parseUuid(value: unknown, field: string) {
-  if (typeof value !== "string" || !uuidPattern.test(value)) {
-    throw new Error(`${field} must be a valid UUID`);
-  }
-
-  return value;
 }
 
 function parseCloseTime(value: unknown) {
@@ -55,14 +46,10 @@ function parseOutcomes(value: unknown) {
 }
 
 export async function POST(request: Request) {
-  let tenantId: string | undefined;
-
   try {
     const body = await request.json();
-    const parsedTenantId = parseUuid(body.tenantId, "tenantId");
     const closeTime = parseCloseTime(body.closeTime);
     const outcomes = parseOutcomes(body.outcomes);
-    tenantId = parsedTenantId;
 
     if (typeof body.question !== "string") {
       throw new Error("question must be a string");
@@ -70,7 +57,7 @@ export async function POST(request: Request) {
 
     const market = await prisma.market.create({
       data: {
-        tenantId: parsedTenantId,
+        tenantId: DEFAULT_TENANT_ID,
         question: body.question,
         closeTime,
         outcomes: {
@@ -82,7 +69,7 @@ export async function POST(request: Request) {
 
     logger.info({
       marketId: market.id,
-      tenantId: parsedTenantId,
+      tenantId: DEFAULT_TENANT_ID,
     });
 
     return jsonResponse(market, 200);
@@ -91,7 +78,7 @@ export async function POST(request: Request) {
       error instanceof Error ? error.message : "Unable to create market";
     logger.error({
       errorMessage: message,
-      tenantId,
+      tenantId: DEFAULT_TENANT_ID,
     });
 
     return jsonResponse({ error: "Unable to create market" }, 500);
