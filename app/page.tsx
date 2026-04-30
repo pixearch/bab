@@ -1,12 +1,18 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
 import BettingWidget from "../components/BettingWidget.js";
 
 const prisma = new PrismaClient();
 
 export default async function Home() {
-  const markets = await prisma.market.findMany({
-    include: { outcomes: true },
-  });
+  let markets: Prisma.MarketGetPayload<{ include: { outcomes: true } }>[] = [];
+
+  try {
+    markets = await prisma.market.findMany({
+      include: { outcomes: true },
+    });
+  } catch {
+    markets = [];
+  }
 
   const bettingMarkets = markets.map((market) => ({
     marketId: market.id,
