@@ -1,26 +1,36 @@
+import { PrismaClient } from "@prisma/client";
 import BettingWidget from "../components/BettingWidget.js";
 
-const mockMarket = {
-  marketId: "11111111-1111-4111-8111-111111111111",
-  marketQuestion: "Will the Federal Reserve cut rates in November?",
-  outcomes: [
-    {
-      id: "22222222-2222-4222-8222-222222222222",
-      name: "Yes",
-      impliedProbability: 0.45,
-    },
-    {
-      id: "33333333-3333-4333-8333-333333333333",
-      name: "No",
-      impliedProbability: 0.55,
-    },
-  ],
-};
+const prisma = new PrismaClient();
 
-export default function Home() {
+export default async function Home() {
+  const markets = await prisma.market.findMany({
+    include: { outcomes: true },
+  });
+
+  const bettingMarkets = markets.map((market) => ({
+    marketId: market.id,
+    marketQuestion: market.question,
+    outcomes: market.outcomes.map((outcome) => ({
+      id: outcome.id,
+      name: outcome.name,
+      impliedProbability: outcome.currentOdds.toNumber(),
+    })),
+  }));
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
-      <BettingWidget {...mockMarket} />
+    <main className="min-h-screen bg-gray-50 p-6">
+      {bettingMarkets.length === 0 ? (
+        <p className="text-center text-slate-600">
+          No active markets found. Create one at /admin
+        </p>
+      ) : (
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {bettingMarkets.map((market) => (
+            <BettingWidget key={market.marketId} {...market} />
+          ))}
+        </div>
+      )}
     </main>
   );
 }
