@@ -7,7 +7,7 @@ type OutcomeInput = {
   currentOdds: string;
 };
 
-const dummyTenantId = "11111111-1111-4111-8111-111111111111";
+const dummyTenantId = "550e8400-e29b-41d4-a716-446655440000";
 
 export default function AdminPage() {
   const [question, setQuestion] = useState("");
