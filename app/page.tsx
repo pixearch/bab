@@ -1,6 +1,8 @@
 import { PrismaClient, type Prisma } from "@prisma/client";
 import BettingWidget from "../components/BettingWidget.js";
 
+export const dynamic = "force-dynamic";
+
 const prisma = new PrismaClient();
 
 export default async function Home() {
@@ -10,7 +12,8 @@ export default async function Home() {
     markets = await prisma.market.findMany({
       include: { outcomes: true },
     });
-  } catch {
+  } catch (error) {
+    console.error("Failed to fetch markets:", error);
     markets = [];
   }
 
